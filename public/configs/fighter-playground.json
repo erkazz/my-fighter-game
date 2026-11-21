@@ -35,7 +35,7 @@
   },
   "combat": {
     "red-brawler": {
-      "maxHealth": 100,
+      "maxHealth": 125,
       "highDamage": 7,
       "highKnockback": 180,
       "highHitstun": 280,
@@ -47,7 +47,7 @@
       "specialHitstun": 250
     },
     "green-boxer": {
-      "maxHealth": 100,
+      "maxHealth": 125,
       "highDamage": 9,
       "highKnockback": 220,
       "highHitstun": 280,
@@ -59,7 +59,7 @@
       "specialHitstun": 250
     },
     "jiujitsu-fighter": {
-      "maxHealth": 110,
+      "maxHealth": 135,
       "highDamage": 7,
       "highKnockback": 180,
       "highHitstun": 280,
@@ -71,7 +71,7 @@
       "specialHitstun": 240
     },
     "bayasaa": {
-      "maxHealth": 110,
+      "maxHealth": 135,
       "highDamage": 8,
       "highKnockback": 200,
       "highHitstun": 290,
@@ -83,7 +83,7 @@
       "specialHitstun": 260
     },
     "my-hero": {
-      "maxHealth": 105,
+      "maxHealth": 130,
       "highDamage": 8,
       "highKnockback": 195,
       "highHitstun": 280,
@@ -95,7 +95,7 @@
       "specialHitstun": 250
     },
     "tchouameni": {
-      "maxHealth": 115,
+      "maxHealth": 140,
       "highDamage": 8,
       "highKnockback": 210,
       "highHitstun": 295,
@@ -107,7 +107,7 @@
       "specialHitstun": 260
     },
     "valverde": {
-      "maxHealth": 105,
+      "maxHealth": 130,
       "highDamage": 7,
       "highKnockback": 185,
       "highHitstun": 280,

@@ -67,7 +67,7 @@ export const FIGHTER_STAT_FIELDS: FighterStatField[] = [
  * harder, pushes further, and stuns longer.
  */
 export const DEFAULT_FIGHTER_COMBAT: FighterCombat = {
-  maxHealth: 100,
+  maxHealth: 125,
   highDamage: 7,
   highKnockback: 180,
   highHitstun: 280,
@@ -85,6 +85,7 @@ export const DEFAULT_FIGHTER_COMBAT: FighterCombat = {
  */
 const FIGHTER_COMBAT_OVERRIDES: Record<string, Partial<FighterCombat>> = {
   [RED_BRAWLER_CHARACTER_ID]: {
+    maxHealth: 125,
     lowDamage: 17,
     lowKnockback: 430,
     lowHitstun: 520,
@@ -92,6 +93,7 @@ const FIGHTER_COMBAT_OVERRIDES: Record<string, Partial<FighterCombat>> = {
     specialKnockback: 180
   },
   [GREEN_BOXER_CHARACTER_ID]: {
+    maxHealth: 125,
     highDamage: 9,
     highKnockback: 220,
     lowDamage: 16,
@@ -99,7 +101,7 @@ const FIGHTER_COMBAT_OVERRIDES: Record<string, Partial<FighterCombat>> = {
     lowHitstun: 500
   },
   [JIUJITSU_FIGHTER_CHARACTER_ID]: {
-    maxHealth: 110,
+    maxHealth: 135,
     highDamage: 7,
     lowDamage: 18,
     lowKnockback: 450,
@@ -108,7 +110,7 @@ const FIGHTER_COMBAT_OVERRIDES: Record<string, Partial<FighterCombat>> = {
     specialHitstun: 240
   },
   [BAYASAA_CHARACTER_ID]: {
-    maxHealth: 110,
+    maxHealth: 135,
     highDamage: 8,
     highKnockback: 200,
     highHitstun: 290,
@@ -120,7 +122,7 @@ const FIGHTER_COMBAT_OVERRIDES: Record<string, Partial<FighterCombat>> = {
     specialHitstun: 260
   },
   'my-hero': {
-    maxHealth: 105,
+    maxHealth: 130,
     highDamage: 8,
     highKnockback: 195,
     lowDamage: 17,
@@ -130,7 +132,7 @@ const FIGHTER_COMBAT_OVERRIDES: Record<string, Partial<FighterCombat>> = {
     specialKnockback: 190
   },
   tchouameni: {
-    maxHealth: 115,
+    maxHealth: 140,
     highDamage: 8,
     highKnockback: 210,
     highHitstun: 295,
@@ -142,7 +144,7 @@ const FIGHTER_COMBAT_OVERRIDES: Record<string, Partial<FighterCombat>> = {
     specialHitstun: 260
   },
   valverde: {
-    maxHealth: 105,
+    maxHealth: 130,
     highDamage: 7,
     highKnockback: 185,
     highHitstun: 280,
