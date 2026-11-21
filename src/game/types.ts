@@ -6,6 +6,7 @@ export const SCENE_KEYS = {
   LevelSelect: 'LevelSelectScene',
   CharacterSelect: 'CharacterSelectScene',
   Match: 'MatchScene',
+  Victory: 'VictoryScene',
   AssetCatalog: 'AssetCatalogScene',
   AnimationLab: 'AnimationLabScene',
   BackgroundTest: 'BackgroundTestScene',
@@ -33,6 +34,17 @@ export interface MatchConfig {
   stageId: string;
   p1CharacterId: string;
   p2CharacterId: string;
+}
+
+export interface VictorySceneData {
+  matchConfig: MatchConfig;
+  winnerPlayer: 1 | 2;
+  winnerName: string;
+  winnerCharacterId: string;
+  p1Wins: number;
+  p2Wins: number;
+  roundsPlayed: number;
+  finishReason: 'K.O.' | 'TIME UP';
 }
 
 export type GameProfile = 'landscape' | 'portrait';

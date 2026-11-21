@@ -12,7 +12,7 @@ import { getCharacterDefinition } from '../game/hero';
 import { MatchHud } from '../game/matchHud';
 import { getStageDefinition } from '../game/stageConfig';
 import { playSuperCutIn } from '../game/superCutIn';
-import { SCENE_KEYS, type MatchConfig } from '../game/types';
+import { SCENE_KEYS, type MatchConfig, type VictorySceneData } from '../game/types';
 import { spawnHitSpark, spawnImpactFlash, type VfxColor } from '../game/vfx';
 import { BaseScene } from './BaseScene';
 
@@ -32,7 +32,6 @@ const ROUNDS_TO_WIN = 2;
 const ROUND_SECONDS = 60;
 const HUD_DEPTH = 100;
 const BANNER_DEPTH = 200;
-const OVERLAY_DEPTH = 300;
 
 /** The match's high-level state, driving input gating and the HUD. */
 type MatchPhase = 'intro' | 'fighting' | 'roundEnd' | 'matchOver';
@@ -94,7 +93,6 @@ export class MatchScene extends BaseScene {
   private hud!: MatchHud;
   private banner!: Phaser.GameObjects.Text;
   private roundTimeMs = ROUND_SECONDS * 1000;
-  private overlay: Phaser.GameObjects.GameObject[] = [];
   private chargeBalls = new Map<Fighter, Phaser.GameObjects.Image>();
   private projectiles: SoccerBallProjectile[] = [];
 
@@ -114,7 +112,6 @@ export class MatchScene extends BaseScene {
     this.roundNumber = 1;
     this.p1Wins = 0;
     this.p2Wins = 0;
-    this.overlay = [];
 
     this.markActiveScene(SCENE_KEYS.Match);
     this.cameras.main.setBackgroundColor(0x05070d);
@@ -812,11 +809,6 @@ export class MatchScene extends BaseScene {
 
     keyboard.on('keydown-ESC', () => this.goToMenu());
     keyboard.on('keydown-BACKSPACE', () => this.goToMenu());
-    keyboard.on('keydown-R', () => {
-      if (this.phase === 'matchOver') {
-        this.rematch();
-      }
-    });
   }
 
   /**
@@ -927,7 +919,8 @@ export class MatchScene extends BaseScene {
       const matchOver = this.p1Wins >= ROUNDS_TO_WIN || this.p2Wins >= ROUNDS_TO_WIN;
 
       if (matchOver) {
-        this.endMatch(winnerName);
+        const finishReason: VictorySceneData['finishReason'] = bannerText === 'TIME UP' ? 'TIME UP' : 'K.O.';
+        this.endMatch(winner, winnerName, finishReason);
       } else {
         this.roundNumber += 1;
         this.startRound();
@@ -936,87 +929,41 @@ export class MatchScene extends BaseScene {
   }
 
   /**
-   * Shows the game-over overlay with the match winner and rematch / menu options.
-   * @param winnerName - The display name of the match winner.
+   * Transitions to the celebratory VictoryScene once the match is decided.
+   * @param winnerPlayer - Winning player slot (1 or 2).
+   * @param winnerName - Display name of the match winner.
+   * @param finishReason - How the final round ended.
    */
-  private endMatch(winnerName: string): void {
+  private endMatch(
+    winnerPlayer: 1 | 2,
+    winnerName: string,
+    finishReason: VictorySceneData['finishReason']
+  ): void {
     this.phase = 'matchOver';
     this.hideBanner();
     playAudioCue(this, AUDIO_KEYS.victory, this.app.settingsStore.getState());
+    this.cameras.main.flash(260, 255, 224, 130, false);
 
-    const { centerX, centerY, width, height } = this.cameras.main;
+    const winnerCharacterId =
+      winnerPlayer === 1 ? this.config.p1CharacterId : this.config.p2CharacterId;
 
-    const dim = this.add
-      .rectangle(centerX, centerY, width, height, 0x020617, 0.62)
-      .setDepth(OVERLAY_DEPTH)
-      .setScrollFactor(0);
+    const victoryData: VictorySceneData = {
+      matchConfig: { ...this.config },
+      winnerPlayer,
+      winnerName,
+      winnerCharacterId,
+      p1Wins: this.p1Wins,
+      p2Wins: this.p2Wins,
+      roundsPlayed: this.roundNumber,
+      finishReason
+    };
 
-    const title = this.add
-      .text(centerX, centerY - 90, `${winnerName}  WINS!`, {
-        color: '#facc15',
-        fontFamily: 'monospace',
-        fontSize: '46px',
-        stroke: '#020617',
-        strokeThickness: 6,
-        align: 'center'
-      })
-      .setOrigin(0.5)
-      .setDepth(OVERLAY_DEPTH)
-      .setScrollFactor(0);
-
-    const score = this.add
-      .text(centerX, centerY - 30, `${this.p1Wins} - ${this.p2Wins}`, {
-        color: '#e2e8f0',
-        fontFamily: 'monospace',
-        fontSize: '28px'
-      })
-      .setOrigin(0.5)
-      .setDepth(OVERLAY_DEPTH)
-      .setScrollFactor(0);
-
-    const rematch = this.makeOverlayButton(centerX, centerY + 40, 'Rematch  (R)', () => this.rematch());
-    const menu = this.makeOverlayButton(centerX, centerY + 96, 'Main Menu  (Esc)', () => this.goToMenu());
-
-    this.overlay = [dim, title, score, rematch, menu];
-  }
-
-  /**
-   * Builds a clickable overlay button with hover feedback.
-   * @param x - Centre x.
-   * @param y - Centre y.
-   * @param label - Button text.
-   * @param onClick - Click handler.
-   */
-  private makeOverlayButton(x: number, y: number, label: string, onClick: () => void): Phaser.GameObjects.Text {
-    const button = this.add
-      .text(x, y, label, {
-        color: '#e2e8f0',
-        fontFamily: 'monospace',
-        fontSize: '22px',
-        backgroundColor: 'rgba(15, 23, 42, 0.9)',
-        padding: { x: 18, y: 10 }
-      })
-      .setOrigin(0.5)
-      .setDepth(OVERLAY_DEPTH)
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true });
-
-    button.on('pointerover', () => button.setColor('#facc15'));
-    button.on('pointerout', () => button.setColor('#e2e8f0'));
-    button.on('pointerdown', onClick);
-
-    return button;
-  }
-
-  /** Restarts the match from round 1 with the same configuration. */
-  private rematch(): void {
-    this.overlay.forEach((object) => object.destroy());
-    this.overlay = [];
-    this.roundNumber = 1;
-    this.p1Wins = 0;
-    this.p2Wins = 0;
-    this.cpu = this.config.mode === '1vcpu' ? new CpuController() : undefined;
-    this.startRound();
+    this.time.delayedCall(420, () => {
+      this.cameras.main.fadeOut(320, 18, 4, 40);
+      this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+        this.scene.start(SCENE_KEYS.Victory, victoryData);
+      });
+    });
   }
 
   /**
