@@ -30,9 +30,9 @@ const BLOCKSTUN_SECONDS = 0.14;
 /** Full meter value; a special requires (and consumes) a full bar. */
 const METER_MAX = 100;
 /** Meter gained by the attacker when a normal attack lands. */
-const METER_GAIN_ON_HIT = 12;
+const METER_GAIN_ON_HIT = 10;
 /** Meter gained by the defender when taking a hit. */
-const METER_GAIN_ON_TAKE = 7;
+const METER_GAIN_ON_TAKE = 6;
 /** Meter gained by both sides on a blocked hit. */
 const METER_GAIN_ON_BLOCK = 4;
 /**
@@ -257,6 +257,20 @@ export class Fighter {
     return this.defeated;
   }
 
+  /** Whether the fighter is currently reeling from hitstun (usable for combo tracking). */
+  get isInHitstun(): boolean {
+    return this.hitstunTimer > 0 && !this.stunIsBlock;
+  }
+
+  /** Whether the fighter is mid-attack or charging a special (usable for counter-hit detection). */
+  get isAttacking(): boolean {
+    return (
+      this.locked &&
+      !this.defeated &&
+      (this.currentAttackKind() !== null || this.currentAnimKey === this.actionKeys.specialCharge)
+    );
+  }
+
   /** The fighter's special meter charge (0..1). */
   get meter01(): number {
     return METER_MAX > 0 ? Phaser.Math.Clamp(this.meter / METER_MAX, 0, 1) : 0;
@@ -330,8 +344,11 @@ export class Fighter {
 
     this.appliedScale = scale;
     this.sprite.setScale(scale);
+    if (this.grounded) {
+      this.sprite.y = this.spriteBaseY(scale);
+    }
     this.shadow.setSize(Math.round(107 * scale), Math.round(24 * scale));
-    this.shadow.y = this.groundY - SHADOW_FOOT_OFFSET * scale;
+    this.shadow.y = this.groundY;
     this.updateShadow();
   }
 
@@ -496,17 +513,40 @@ export class Fighter {
    * @param attackerFacing - The attacker's facing (push direction).
    * @param blocked - Whether the defender guarded the attack.
    */
-  applyHit(profile: AttackProfile, attackerFacing: 1 | -1, blocked: boolean): void {
+  applyHit(
+    profile: AttackProfile,
+    attackerFacing: 1 | -1,
+    blocked: boolean,
+    chipDamageOverride?: number
+  ): void {
     if (this.defeated) {
       return;
     }
 
     if (blocked) {
+      if (profile.kind !== 'high') {
+        const chip = chipDamageOverride ?? Math.max(1, Math.round(profile.damage * 0.14));
+        this.health = Math.max(1, this.health - chip);
+      }
       this.knockbackVel = attackerFacing * profile.knockback * 0.35;
       this.hitstunTimer = Math.max(this.hitstunTimer, BLOCKSTUN_SECONDS);
       this.stunIsBlock = true;
       this.stunBlockLow = this.currentAnimKey === this.actionKeys.blockLow;
       this.locked = false;
+      return;
+    }
+
+    if (this.hasSpecialArmor()) {
+      const armoredDamage = Math.max(1, Math.round(profile.damage * 0.65));
+      this.health = Math.max(0, this.health - armoredDamage);
+      if (this.health <= 0) {
+        this.defeated = true;
+        this.locked = true;
+        this.grounded = true;
+        this.stunIsBlock = false;
+        this.hitstunTimer = 0;
+        this.playState(this.actionKeys.knockdown, false);
+      }
       return;
     }
 
@@ -556,7 +596,7 @@ export class Fighter {
     this.currentAnimKey = '';
     this.currentReverse = false;
 
-    this.sprite.setPosition(this.posX, this.groundY).setFlipX(this.facing === 1);
+    this.sprite.setPosition(this.posX, this.spriteBaseY()).setFlipX(this.facing === 1);
     this.playState(this.actionKeys.idle, true);
     this.updateShadow();
   }
@@ -679,6 +719,16 @@ export class Fighter {
     return null;
   }
 
+  /** Whether the fighter currently has uninterruptible armor during a special. */
+  private hasSpecialArmor(): boolean {
+    return (
+      this.character.id === 'valverde' &&
+      this.locked &&
+      !this.defeated &&
+      (this.currentAnimKey === this.actionKeys.specialCharge || this.currentAnimKey === this.actionKeys.special)
+    );
+  }
+
   /** The fighter's active animation definition, or null when none is playing. */
   private currentAnimation(): HeroAnimationDefinition | null {
     const animKey = this.sprite.anims.currentAnim?.key ?? this.currentAnimKey;
@@ -709,8 +759,12 @@ export class Fighter {
         : Math.min(0, this.knockbackVel + decay);
   }
 
+  private spriteBaseY(scale = this.appliedScale || this.stats().scale): number {
+    return this.groundY + SHADOW_FOOT_OFFSET * scale;
+  }
+
   /**
-   * Builds the sprite (feet-anchored, facing the opponent) and ground shadow.
+   * Builds the sprite (feet-anchored directly on groundY) and ground shadow.
    * @param depth - The display depth for the sprite (shadow renders just under).
    */
   private build(depth: number): void {
@@ -721,17 +775,17 @@ export class Fighter {
     this.shadow = this.scene.add
       .ellipse(
         this.posX,
-        this.groundY - SHADOW_FOOT_OFFSET * scale,
+        this.groundY,
         Math.round(107 * scale),
         Math.round(24 * scale),
         0x000000,
         1
       )
-      .setAlpha(0.32)
+      .setAlpha(0.38)
       .setDepth(depth - 1);
 
     this.sprite = this.scene.add
-      .sprite(this.posX, this.groundY, this.actionKeys.idle, 0)
+      .sprite(this.posX, this.spriteBaseY(scale), this.actionKeys.idle, 0)
       .setOrigin(0.5, this.character.anchor.y)
       .setScale(scale)
       .setFlipX(this.facing === 1)
@@ -765,8 +819,9 @@ export class Fighter {
       this.sprite.x = this.posX;
     }
 
-    if (nextY >= this.groundY) {
-      nextY = this.groundY;
+    const floorY = this.spriteBaseY();
+    if (nextY >= floorY) {
+      nextY = floorY;
       this.velocityY = 0;
       this.grounded = true;
       this.currentAnimKey = '';
@@ -1140,10 +1195,10 @@ export class Fighter {
 
   /** Keeps the ground shadow under the fighter and shrinks it as they rise. */
   private updateShadow(): void {
-    const airborneLift = Phaser.Math.Clamp((this.groundY - this.sprite.y) / 220, 0, 1);
+    const airborneLift = Phaser.Math.Clamp((this.spriteBaseY() - this.sprite.y) / 220, 0, 1);
 
     this.shadow.x = this.posX;
     this.shadow.setScale(1 - airborneLift * 0.45);
-    this.shadow.setAlpha(0.32 - airborneLift * 0.18);
+    this.shadow.setAlpha(0.38 - airborneLift * 0.22);
   }
 }

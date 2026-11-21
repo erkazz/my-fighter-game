@@ -16,7 +16,6 @@ import { SCENE_KEYS, type MatchConfig, type VictorySceneData } from '../game/typ
 import { spawnHitSpark, spawnImpactFlash, type VfxColor } from '../game/vfx';
 import { BaseScene } from './BaseScene';
 
-const GROUND_FRACTION = 0.82;
 const EDGE_MARGIN = 170;
 const DEPTH_FRONT = 8;
 const DEPTH_BACK = 5;
@@ -93,6 +92,9 @@ export class MatchScene extends BaseScene {
   private hud!: MatchHud;
   private banner!: Phaser.GameObjects.Text;
   private roundTimeMs = ROUND_SECONDS * 1000;
+  private hitstopMs = 0;
+  private p1Combo = 0;
+  private p2Combo = 0;
   private chargeBalls = new Map<Fighter, Phaser.GameObjects.Image>();
   private projectiles: SoccerBallProjectile[] = [];
 
@@ -112,6 +114,9 @@ export class MatchScene extends BaseScene {
     this.roundNumber = 1;
     this.p1Wins = 0;
     this.p2Wins = 0;
+    this.hitstopMs = 0;
+    this.p1Combo = 0;
+    this.p2Combo = 0;
 
     this.markActiveScene(SCENE_KEYS.Match);
     this.cameras.main.setBackgroundColor(0x05070d);
@@ -171,13 +176,18 @@ export class MatchScene extends BaseScene {
    * @param delta - Milliseconds since the previous frame.
    */
   update(time: number, delta: number): void {
+    if (this.hitstopMs > 0) {
+      this.hitstopMs = Math.max(0, this.hitstopMs - delta);
+      return;
+    }
+
     const seconds = delta / 1000;
     const fighting = this.phase === 'fighting';
 
     const p1Input = fighting ? this.readKeys(this.p1Keys) : { ...NEUTRAL_FIGHTER_INPUT };
     const p2Input = fighting
       ? this.cpu
-        ? this.cpu.update(time)
+        ? this.cpu.update(time, this.p2.x, this.p1.x, this.p1.isAttacking, this.p2.isMeterReady)
         : this.readKeys(this.p2Keys)
       : { ...NEUTRAL_FIGHTER_INPUT };
 
@@ -186,11 +196,6 @@ export class MatchScene extends BaseScene {
     // standing guard box; the crouch/low path stays in the code but unused.
     p1Input.crouch = false;
     p2Input.crouch = false;
-
-    // CPU occasionally unleashes its special once the meter is charged.
-    if (fighting && this.cpu && this.p2.isMeterReady && Phaser.Math.Between(0, 150) === 0) {
-      p2Input.special = true;
-    }
 
     this.p1.faceToward(this.p2.x);
     this.p2.faceToward(this.p1.x);
@@ -207,6 +212,13 @@ export class MatchScene extends BaseScene {
 
     this.p1.update(seconds, p1Input);
     this.p2.update(seconds, p2Input);
+
+    if (!this.p2.isInHitstun) {
+      this.p1Combo = 0;
+    }
+    if (!this.p1.isInHitstun) {
+      this.p2Combo = 0;
+    }
 
     this.updateCamera(false);
 
@@ -261,19 +273,39 @@ export class MatchScene extends BaseScene {
     const blocked = guard !== null && Phaser.Geom.Intersects.RectangleToRectangle(attack.rect, guard);
     const isSpecial = attack.profile.kind === 'special';
     const finisher = attack.finisher && !blocked;
-    const isCritical = !blocked && attacker.characterId === 'valverde' && Math.random() < 0.2;
+    const isCounter = !blocked && defender.isAttacking;
+    const isCritical = !blocked && attacker.characterId === 'valverde' && Math.random() < 0.18;
+
+    const comboCount = blocked ? 0 : this.advanceCombo(attacker, defender);
+    const comboScale = comboCount <= 1 ? 1 : Math.max(0.6, 1 - (comboCount - 1) * 0.1);
 
     // The combo finisher launches harder and stuns longer than a regular hit.
     let profile = finisher
-      ? { ...attack.profile, knockback: attack.profile.knockback * 1.9, hitstun: attack.profile.hitstun * 1.4 }
-      : attack.profile;
+      ? { ...attack.profile, knockback: attack.profile.knockback * 1.75, hitstun: attack.profile.hitstun * 1.35 }
+      : { ...attack.profile };
+
+    if (isCounter) {
+      profile = {
+        ...profile,
+        damage: Math.round(profile.damage * 1.25),
+        knockback: Math.round(profile.knockback * 1.15),
+        hitstun: Math.round(profile.hitstun * 1.2)
+      };
+    }
 
     if (isCritical) {
       profile = {
         ...profile,
-        damage: Math.round(profile.damage * 1.55),
-        knockback: Math.round(profile.knockback * 1.25),
-        hitstun: Math.round(profile.hitstun * 1.15)
+        damage: Math.round(profile.damage * 1.4),
+        knockback: Math.round(profile.knockback * 1.2),
+        hitstun: Math.round(profile.hitstun * 1.12)
+      };
+    }
+
+    if (!blocked && comboScale < 1) {
+      profile = {
+        ...profile,
+        damage: Math.max(2, Math.round(profile.damage * comboScale))
       };
     }
 
@@ -283,6 +315,10 @@ export class MatchScene extends BaseScene {
     attacker.registerOffense(blocked, isSpecial);
     defender.registerDefense(blocked);
 
+    if (isCounter) {
+      attacker.gainMeter(5);
+    }
+
     this.spawnHitFx(
       attack.rect,
       hurt,
@@ -291,26 +327,39 @@ export class MatchScene extends BaseScene {
       finisher,
       attack.profile.kind === 'low',
       attacker.characterId === 'valverde' && attack.profile.kind === 'low',
-      isCritical
+      isCritical,
+      isCounter
     );
 
-    if (isCritical) {
-      const head = defender.getHeadPoint();
-      this.spawnCriticalCallout(head.x, head.y - 24);
+    if (!blocked) {
+      this.hitstopMs = finisher || isCritical ? 90 : isCounter || attack.profile.kind === 'low' ? 62 : 34;
     }
+
+    const head = defender.getHeadPoint();
+    if (isCritical) {
+      this.spawnCombatCallout(head.x, head.y - 26, 'CRITICAL!', '#facc15');
+    } else if (isCounter) {
+      this.spawnCombatCallout(head.x, head.y - 26, 'COUNTER!', '#38bdf8');
+    }
+
+    if (comboCount >= 2) {
+      this.spawnComboPopup(attacker, comboCount);
+    }
+  }
+
+  private advanceCombo(attacker: Fighter, defender: Fighter): number {
+    const continuing = defender.isInHitstun;
+    if (attacker === this.p1) {
+      this.p1Combo = continuing ? this.p1Combo + 1 : 1;
+      return this.p1Combo;
+    }
+    this.p2Combo = continuing ? this.p2Combo + 1 : 1;
+    return this.p2Combo;
   }
 
   /**
    * Spawns the impact spark and camera shake for a connecting hit, scaled up for
    * special hits and the combo finisher.
-   * @param attackRect - The attacker's attack box (world space).
-   * @param hurtRect - The defender's hurtbox (world space).
-   * @param blocked - Whether the hit was guarded.
-   * @param isSpecial - Whether the attack was a special move.
-   * @param finisher - Whether this is the special's finishing hit.
-   * @param isHeavy - Whether the normal strike was a heavy attack.
-   * @param isPowerKick - Whether the strike is Valverde's powered heavy kick.
-   * @param isCritical - Whether the strike landed a critical hit.
    */
   private spawnHitFx(
     attackRect: Phaser.Geom.Rectangle,
@@ -320,43 +369,44 @@ export class MatchScene extends BaseScene {
     finisher: boolean,
     isHeavy: boolean,
     isPowerKick: boolean,
-    isCritical: boolean
+    isCritical: boolean,
+    isCounter = false
   ): void {
     const sparkX = (Phaser.Geom.Rectangle.GetCenter(attackRect).x + Phaser.Geom.Rectangle.GetCenter(hurtRect).x) / 2;
     const sparkY = (Phaser.Geom.Rectangle.GetCenter(attackRect).y + Phaser.Geom.Rectangle.GetCenter(hurtRect).y) / 2;
 
-    const color: VfxColor = blocked ? 'blue' : finisher || isCritical || isPowerKick ? 'gold' : 'red';
-    const sparkScale = finisher || isCritical ? 1.7 : isPowerKick ? 1.35 : isSpecial ? 1.1 : 0.9;
+    const color: VfxColor = blocked ? 'blue' : finisher || isCritical || isPowerKick || isCounter ? 'gold' : 'red';
+    const sparkScale = finisher || isCritical ? 1.65 : isPowerKick || isCounter ? 1.3 : isSpecial ? 1.1 : 0.9;
     spawnHitSpark(this, sparkX, sparkY, color, sparkScale);
 
     const settings = this.app.settingsStore.getState();
     if (blocked) {
       playAudioCue(this, AUDIO_KEYS.block, settings);
-      this.cameras.main.shake(60, 0.003);
+      this.cameras.main.shake(55, 0.0028);
     } else if (finisher || isCritical) {
       playAudioCue(this, AUDIO_KEYS.specialHit, settings);
-      this.cameras.main.flash(isCritical ? 110 : 140, 255, 224, 120, false);
-      this.cameras.main.shake(isCritical ? 210 : 220, isCritical ? 0.0125 : 0.012);
-    } else if (isPowerKick) {
+      this.cameras.main.flash(isCritical ? 95 : 120, 255, 224, 120, false);
+      this.cameras.main.shake(isCritical ? 190 : 200, isCritical ? 0.011 : 0.01);
+    } else if (isPowerKick || isCounter) {
       playAudioCue(this, AUDIO_KEYS.hitHeavy, settings);
-      spawnImpactFlash(this, sparkX, sparkY, 'gold', 50);
-      this.cameras.main.shake(155, 0.0085);
+      spawnImpactFlash(this, sparkX, sparkY, isCounter ? 'blue' : 'gold', 48);
+      this.cameras.main.shake(145, 0.008);
     } else if (isSpecial || isHeavy) {
       playAudioCue(this, AUDIO_KEYS.hitHeavy, settings);
-      this.cameras.main.shake(isSpecial ? 110 : 125, 0.007);
+      this.cameras.main.shake(isSpecial ? 100 : 115, 0.0065);
     } else {
       playAudioCue(this, AUDIO_KEYS.hitLight, settings);
-      this.cameras.main.shake(90, 0.0045);
+      this.cameras.main.shake(80, 0.004);
     }
   }
 
-  private spawnCriticalCallout(x: number, y: number): void {
+  private spawnCombatCallout(x: number, y: number, text: string, color: string): void {
     const label = this.add
-      .text(x, y, 'CRITICAL!', {
-        color: '#facc15',
+      .text(x, y, text, {
+        color,
         fontFamily: 'monospace',
         fontStyle: 'bold',
-        fontSize: '26px',
+        fontSize: '25px',
         stroke: '#020617',
         strokeThickness: 6
       })
@@ -372,6 +422,37 @@ export class MatchScene extends BaseScene {
       duration: 680,
       ease: 'Cubic.Out',
       onComplete: () => label.destroy()
+    });
+  }
+
+  private spawnComboPopup(attacker: Fighter, count: number): void {
+    const cam = this.cameras.main;
+    const isP1 = attacker === this.p1;
+    const x = isP1 ? 156 : cam.width - 156;
+    const y = 176;
+
+    const comboText = this.add
+      .text(x, y, `${count} HITS!`, {
+        color: isP1 ? '#38bdf8' : '#ff2a6d',
+        fontFamily: '"Silkscreen", monospace',
+        fontStyle: 'bold italic',
+        fontSize: '28px',
+        stroke: '#020617',
+        strokeThickness: 6
+      })
+      .setOrigin(0.5)
+      .setDepth(HUD_DEPTH + 5)
+      .setScrollFactor(0)
+      .setScale(0.65);
+
+    this.tweens.add({
+      targets: comboText,
+      scale: 1.1,
+      y: y - 16,
+      alpha: 0,
+      duration: 760,
+      ease: 'Cubic.Out',
+      onComplete: () => comboText.destroy()
     });
   }
 
@@ -516,7 +597,8 @@ export class MatchScene extends BaseScene {
   /** Spawns P1 (left, facing right) and P2 (right, facing left). */
   private spawnFighters(): void {
     const cam = this.cameras.main;
-    const groundY = Math.round(cam.height * GROUND_FRACTION);
+    const stage = getStageDefinition(this.config.stageId);
+    const groundY = Math.round(cam.height * stage.groundFraction);
     const minX = EDGE_MARGIN;
     const maxX = this.stageWorldWidth - EDGE_MARGIN;
     const center = this.stageWorldWidth / 2;
@@ -600,8 +682,8 @@ export class MatchScene extends BaseScene {
       return;
     }
 
-    // Strike on frame 2 of Valverde's flying kick (10 fps -> ~180ms).
-    this.time.delayedCall(180, () => {
+    // Fast release so close and mid-range opponents cannot easily slip under or past the volley.
+    this.time.delayedCall(105, () => {
       const chargeBall = this.chargeBalls.get(attacker);
       if (chargeBall) {
         chargeBall.destroy();
@@ -612,21 +694,21 @@ export class MatchScene extends BaseScene {
         return;
       }
 
-      const originX = attacker.x + attacker.facingDirection * 74;
-      const originY = attacker.groundBaseY - 98;
+      const originX = attacker.x + attacker.facingDirection * 42;
+      const originY = attacker.groundBaseY - 92;
       const head = defender.getHeadPoint();
-      const forwardDx = Math.max(90, (head.x - originX) * attacker.facingDirection) * attacker.facingDirection;
+      const forwardDx = Math.max(70, (head.x - originX) * attacker.facingDirection) * attacker.facingDirection;
       const dy = head.y - originY;
       const dist = Math.hypot(forwardDx, dy) || 1;
-      const speed = 1320;
+      const speed = 1560;
 
       const ball = this.add
         .image(originX, originY, 'soccer-ball')
         .setDepth(DEPTH_FRONT + 5)
-        .setScale(1.05);
+        .setScale(1.1);
 
       playAudioCue(this, AUDIO_KEYS.hitHeavy, this.app.settingsStore.getState());
-      spawnImpactFlash(this, originX, originY, 'gold', 58);
+      spawnImpactFlash(this, originX, originY, 'gold', 62);
       this.cameras.main.shake(95, 0.0055);
 
       this.projectiles.push({
@@ -651,15 +733,29 @@ export class MatchScene extends BaseScene {
     const remaining: SoccerBallProjectile[] = [];
 
     for (const proj of this.projectiles) {
+      // Gentle homing curve toward the defender's head while approaching them.
+      if (!proj.defender.isDefeated && (proj.defender.x - proj.sprite.x) * proj.facing > -12) {
+        const targetHead = proj.defender.getHeadPoint();
+        const dx = Math.max(60, (targetHead.x - proj.sprite.x) * proj.facing) * proj.facing;
+        const dy = targetHead.y - proj.sprite.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const speed = Math.hypot(proj.vx, proj.vy) || 1560;
+        const desiredVx = (dx / dist) * speed;
+        const desiredVy = (dy / dist) * speed;
+        const steer = Math.min(1, seconds * 10);
+        proj.vx = Phaser.Math.Linear(proj.vx, desiredVx, steer);
+        proj.vy = Phaser.Math.Linear(proj.vy, desiredVy, steer);
+      }
+
       proj.sprite.x += proj.vx * seconds;
       proj.sprite.y += proj.vy * seconds;
-      proj.sprite.angle += proj.facing * 1400 * seconds;
+      proj.sprite.angle += proj.facing * 1500 * seconds;
       proj.trailElapsed += seconds;
 
-      if (proj.trailElapsed >= 0.016) {
+      if (proj.trailElapsed >= 0.014) {
         proj.trailElapsed = 0;
         const trail = this.add
-          .circle(proj.sprite.x, proj.sprite.y, 14, 0xfacc15, 0.45)
+          .circle(proj.sprite.x, proj.sprite.y, 16, 0xfacc15, 0.5)
           .setDepth(DEPTH_FRONT + 4);
         this.tweens.add({
           targets: trail,
@@ -685,7 +781,7 @@ export class MatchScene extends BaseScene {
         continue;
       }
 
-      const ballRect = new Phaser.Geom.Rectangle(proj.sprite.x - 22, proj.sprite.y - 22, 44, 44);
+      const ballRect = new Phaser.Geom.Rectangle(proj.sprite.x - 28, proj.sprite.y - 28, 56, 56);
       const hurt = proj.defender.getHurtRect();
       if (!hurt || !Phaser.Geom.Intersects.RectangleToRectangle(ballRect, hurt)) {
         remaining.push(proj);
@@ -694,18 +790,18 @@ export class MatchScene extends BaseScene {
 
       const guard = proj.defender.getGuardRect();
       const blocked = guard !== null && Phaser.Geom.Intersects.RectangleToRectangle(ballRect, guard);
-      const isCritical = !blocked && Math.random() < 0.25;
+      const isCritical = !blocked && Math.random() < 0.28;
       const baseProfile = proj.attacker.getCombatProfile('special');
       const profile = isCritical
         ? {
             ...baseProfile,
-            damage: Math.round(baseProfile.damage * 1.45),
-            knockback: Math.round(baseProfile.knockback * 1.25),
+            damage: Math.round(baseProfile.damage * 1.4),
+            knockback: Math.round(baseProfile.knockback * 1.2),
             hitstun: Math.round(baseProfile.hitstun * 1.15)
           }
         : baseProfile;
 
-      proj.defender.applyHit(profile, proj.facing, blocked);
+      proj.defender.applyHit(profile, proj.facing, blocked, blocked ? 9 : undefined);
       proj.defender.flashHit(blocked);
       proj.defender.registerDefense(blocked);
 
@@ -714,16 +810,20 @@ export class MatchScene extends BaseScene {
       const hitY = blocked ? proj.sprite.y : head.y;
 
       if (blocked) {
-        spawnHitSpark(this, hitX, hitY, 'blue', 1.25);
+        proj.attacker.gainMeter(10);
+        spawnHitSpark(this, hitX, hitY, 'blue', 1.4);
         playAudioCue(this, AUDIO_KEYS.block, settings);
-        this.cameras.main.shake(90, 0.004);
+        this.cameras.main.shake(115, 0.0055);
+        this.spawnCombatCallout(hitX, hitY - 24, 'GUARD CRUSH!', '#38bdf8');
       } else {
-        spawnHitSpark(this, hitX, hitY, 'gold', isCritical ? 2.2 : 1.9);
+        proj.attacker.gainMeter(25);
+        this.hitstopMs = isCritical ? 110 : 85;
+        spawnHitSpark(this, hitX, hitY, 'gold', isCritical ? 2.25 : 1.95);
         playAudioCue(this, AUDIO_KEYS.specialHit, settings);
-        this.cameras.main.flash(isCritical ? 200 : 160, 255, 224, 120, false);
-        this.cameras.main.shake(isCritical ? 300 : 250, isCritical ? 0.018 : 0.015);
+        this.cameras.main.flash(isCritical ? 180 : 140, 255, 224, 120, false);
+        this.cameras.main.shake(isCritical ? 270 : 220, isCritical ? 0.016 : 0.013);
         if (isCritical) {
-          this.spawnCriticalCallout(hitX, hitY - 28);
+          this.spawnCombatCallout(hitX, hitY - 28, 'CRITICAL!', '#facc15');
         }
       }
 
@@ -851,6 +951,9 @@ export class MatchScene extends BaseScene {
   /** Resets both fighters to their corners and runs the round intro. */
   private startRound(): void {
     this.clearSpecialProps();
+    this.hitstopMs = 0;
+    this.p1Combo = 0;
+    this.p2Combo = 0;
     this.phase = 'intro';
     this.roundTimeMs = ROUND_SECONDS * 1000;
 
@@ -993,27 +1096,27 @@ function isActing(input: FighterInput): boolean {
 }
 
 /**
- * A placeholder CPU opponent: mostly idle, occasionally performing a short
- * random action (a strike, a hop, or a brief walk/crouch/block). Produces a
- * {@link FighterInput} each frame for the second fighter in 1vCPU matches.
+ * Spacing-aware CPU opponent: closes distance when far, exchanges pokes/kicks in
+ * strike range, guards incoming attacks reactively, and fires specials when ready.
  */
 class CpuController {
   private nextDecisionAt = 0;
   private holdUntil = 0;
   private moveDir = 0;
-  private holdCrouch = false;
   private holdBlock = false;
 
-  /**
-   * Produce the CPU's input for this frame.
-   * @param timeMs - The current Phaser clock time in ms.
-   */
-  update(timeMs: number): FighterInput {
+  update(
+    timeMs: number,
+    cpuX: number,
+    opponentX: number,
+    opponentAttacking: boolean,
+    meterReady: boolean
+  ): FighterInput {
     const input: FighterInput = { ...NEUTRAL_FIGHTER_INPUT };
 
     if (timeMs >= this.nextDecisionAt) {
-      this.decide(timeMs, input);
-      this.nextDecisionAt = timeMs + Phaser.Math.Between(700, 1700);
+      this.decide(timeMs, cpuX, opponentX, opponentAttacking, meterReady, input);
+      this.nextDecisionAt = timeMs + Phaser.Math.Between(260, 560);
     }
 
     if (timeMs < this.holdUntil) {
@@ -1022,52 +1125,78 @@ class CpuController {
       } else if (this.moveDir > 0) {
         input.right = true;
       }
-      input.crouch = input.crouch || this.holdCrouch;
       input.block = input.block || this.holdBlock;
     } else {
       this.moveDir = 0;
-      this.holdCrouch = false;
       this.holdBlock = false;
     }
 
     return input;
   }
 
-  /**
-   * Choose the CPU's next behaviour, emitting one-shot strikes immediately and
-   * scheduling held movement/guard for a short window.
-   * @param timeMs - The current Phaser clock time in ms.
-   * @param input - The input snapshot to mutate for one-shot edges.
-   */
-  private decide(timeMs: number, input: FighterInput): void {
+  private decide(
+    timeMs: number,
+    cpuX: number,
+    opponentX: number,
+    opponentAttacking: boolean,
+    meterReady: boolean,
+    input: FighterInput
+  ): void {
+    const dx = opponentX - cpuX;
+    const distance = Math.abs(dx);
+    const towardDir = dx >= 0 ? 1 : -1;
     const roll = Math.random();
 
-    if (roll < 0.32) {
+    // Defensive reaction when opponent swings in close range
+    if (opponentAttacking && distance < 220 && roll < 0.55) {
+      this.moveDir = 0;
+      this.holdBlock = true;
+      this.holdUntil = timeMs + Phaser.Math.Between(280, 460);
       return;
     }
-    if (roll < 0.5) {
+
+    // Fire special when meter is ready and inside tactical range
+    if (meterReady && distance < 420 && roll < 0.42) {
+      input.special = true;
+      return;
+    }
+
+    // Approach if too far to strike
+    if (distance > 195) {
+      this.holdBlock = false;
+      this.moveDir = roll < 0.85 ? towardDir : -towardDir;
+      this.holdUntil = timeMs + Phaser.Math.Between(260, 480);
+      if (roll > 0.9) {
+        input.jump = true;
+      }
+      return;
+    }
+
+    // In close/mid strike range: mix light pokes, heavy kicks, spacing, and guards
+    if (roll < 0.34) {
       input.light = true;
       return;
     }
-    if (roll < 0.63) {
+    if (roll < 0.62) {
       input.heavy = true;
       return;
     }
-    if (roll < 0.72) {
-      input.jump = true;
+    if (roll < 0.74) {
+      this.moveDir = 0;
+      this.holdBlock = true;
+      this.holdUntil = timeMs + Phaser.Math.Between(260, 420);
       return;
     }
-    if (roll < 0.9) {
-      this.moveDir = Math.random() < 0.5 ? -1 : 1;
-      this.holdUntil = timeMs + Phaser.Math.Between(350, 800);
+    if (roll < 0.88) {
+      this.holdBlock = false;
+      this.moveDir = distance < 105 ? -towardDir : towardDir;
+      this.holdUntil = timeMs + Phaser.Math.Between(220, 380);
       return;
     }
 
-    if (Math.random() < 0.5) {
-      this.holdCrouch = true;
-    } else {
-      this.holdBlock = true;
-    }
-    this.holdUntil = timeMs + Phaser.Math.Between(350, 800);
+    input.jump = true;
+    this.holdBlock = false;
+    this.moveDir = towardDir;
+    this.holdUntil = timeMs + 320;
   }
 }

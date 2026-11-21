@@ -67,16 +67,16 @@ export const FIGHTER_STAT_FIELDS: FighterStatField[] = [
  * harder, pushes further, and stuns longer.
  */
 export const DEFAULT_FIGHTER_COMBAT: FighterCombat = {
-  maxHealth: 125,
-  highDamage: 7,
-  highKnockback: 180,
-  highHitstun: 280,
-  lowDamage: 16,
-  lowKnockback: 420,
-  lowHitstun: 510,
+  maxHealth: 200,
+  highDamage: 6,
+  highKnockback: 165,
+  highHitstun: 260,
+  lowDamage: 13,
+  lowKnockback: 350,
+  lowHitstun: 450,
   specialDamage: 6,
-  specialKnockback: 160,
-  specialHitstun: 250
+  specialKnockback: 145,
+  specialHitstun: 230
 };
 
 /**
@@ -85,75 +85,76 @@ export const DEFAULT_FIGHTER_COMBAT: FighterCombat = {
  */
 const FIGHTER_COMBAT_OVERRIDES: Record<string, Partial<FighterCombat>> = {
   [RED_BRAWLER_CHARACTER_ID]: {
-    maxHealth: 125,
-    lowDamage: 17,
-    lowKnockback: 430,
-    lowHitstun: 520,
+    maxHealth: 200,
+    highDamage: 6,
+    lowDamage: 14,
+    lowKnockback: 360,
+    lowHitstun: 460,
     specialDamage: 7,
-    specialKnockback: 180
+    specialKnockback: 160
   },
   [GREEN_BOXER_CHARACTER_ID]: {
-    maxHealth: 125,
-    highDamage: 9,
-    highKnockback: 220,
-    lowDamage: 16,
-    lowKnockback: 400,
-    lowHitstun: 500
-  },
-  [JIUJITSU_FIGHTER_CHARACTER_ID]: {
-    maxHealth: 135,
-    highDamage: 7,
-    lowDamage: 18,
-    lowKnockback: 450,
-    lowHitstun: 540,
-    specialDamage: 6,
-    specialHitstun: 240
-  },
-  [BAYASAA_CHARACTER_ID]: {
-    maxHealth: 135,
-    highDamage: 8,
-    highKnockback: 200,
-    highHitstun: 290,
-    lowDamage: 18,
-    lowKnockback: 440,
-    lowHitstun: 530,
-    specialDamage: 8,
-    specialKnockback: 200,
-    specialHitstun: 260
-  },
-  'my-hero': {
-    maxHealth: 130,
+    maxHealth: 200,
     highDamage: 8,
     highKnockback: 195,
-    lowDamage: 17,
-    lowKnockback: 430,
-    lowHitstun: 520,
-    specialDamage: 8,
-    specialKnockback: 190
+    lowDamage: 13,
+    lowKnockback: 340,
+    lowHitstun: 440
+  },
+  [JIUJITSU_FIGHTER_CHARACTER_ID]: {
+    maxHealth: 215,
+    highDamage: 6,
+    lowDamage: 15,
+    lowKnockback: 380,
+    lowHitstun: 480,
+    specialDamage: 6,
+    specialHitstun: 220
+  },
+  [BAYASAA_CHARACTER_ID]: {
+    maxHealth: 215,
+    highDamage: 7,
+    highKnockback: 180,
+    highHitstun: 270,
+    lowDamage: 15,
+    lowKnockback: 370,
+    lowHitstun: 470,
+    specialDamage: 7,
+    specialKnockback: 180,
+    specialHitstun: 240
+  },
+  'my-hero': {
+    maxHealth: 205,
+    highDamage: 7,
+    highKnockback: 175,
+    lowDamage: 14,
+    lowKnockback: 360,
+    lowHitstun: 460,
+    specialDamage: 7,
+    specialKnockback: 170
   },
   tchouameni: {
-    maxHealth: 140,
-    highDamage: 8,
-    highKnockback: 210,
-    highHitstun: 295,
-    lowDamage: 18,
-    lowKnockback: 460,
-    lowHitstun: 550,
-    specialDamage: 8,
-    specialKnockback: 210,
-    specialHitstun: 260
+    maxHealth: 230,
+    highDamage: 7,
+    highKnockback: 190,
+    highHitstun: 275,
+    lowDamage: 15,
+    lowKnockback: 390,
+    lowHitstun: 490,
+    specialDamage: 7,
+    specialKnockback: 190,
+    specialHitstun: 240
   },
   valverde: {
-    maxHealth: 130,
-    highDamage: 7,
-    highKnockback: 185,
-    highHitstun: 280,
-    lowDamage: 16,
-    lowKnockback: 430,
-    lowHitstun: 530,
-    specialDamage: 22,
-    specialKnockback: 480,
-    specialHitstun: 580
+    maxHealth: 205,
+    highDamage: 6,
+    highKnockback: 170,
+    highHitstun: 260,
+    lowDamage: 14,
+    lowKnockback: 370,
+    lowHitstun: 470,
+    specialDamage: 28,
+    specialKnockback: 450,
+    specialHitstun: 540
   }
 };
 

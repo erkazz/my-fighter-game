@@ -12,6 +12,7 @@ export interface StageDefinition {
   url: string;
   width: number;
   height: number;
+  groundFraction: number;
 }
 
 /**
@@ -38,7 +39,8 @@ export const STAGE_DEFINITIONS: StageDefinition[] = [
     key: 'championship-stadium-stage',
     url: `${STAGE_ASSET_ROOT}/championship-stadium-stage.jpg`,
     width: 1376,
-    height: 768
+    height: 768,
+    groundFraction: 0.875
   },
   {
     id: 'rooftop-twilight',
@@ -46,7 +48,8 @@ export const STAGE_DEFINITIONS: StageDefinition[] = [
     key: 'rooftop-twilight-stage',
     url: `${STAGE_ASSET_ROOT}/rooftop-twilight-stage.png`,
     width: 1774,
-    height: 887
+    height: 887,
+    groundFraction: 0.77
   },
   {
     id: 'rooftop-sunset',
@@ -54,7 +57,8 @@ export const STAGE_DEFINITIONS: StageDefinition[] = [
     key: 'rooftop-sunset-stage',
     url: `${STAGE_ASSET_ROOT}/rooftop-sunset-stage.png`,
     width: 2048,
-    height: 768
+    height: 768,
+    groundFraction: 0.79
   }
 ];
 
